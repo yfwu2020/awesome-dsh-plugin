@@ -12,7 +12,7 @@
  */
 import fs from 'node:fs'
 import { execSync } from 'node:child_process'
-import { Marked } from 'marked'
+import { renderReadme, README_IMAGE_HOSTS } from './lib/readme-html.mjs'
 import LOCALES from '../site/locales.mjs'
 import COMMENTS from '../site/comments.mjs'
 import { CAT_IDS as ENTRY_CAT_IDS, readEntries } from './lib/entries.mjs'
@@ -347,12 +347,7 @@ for (const e of ordered) { e.addedAt = dates[e.url]; e.added = e.addedAt.slice(0
 // entry, and images must live on GitHub's own hosting — a third-party image
 // host would let a list PR plant a tracking pixel in every storefront
 // user's browser.
-const SCREENSHOT_HOSTS = new Set([
-  'raw.githubusercontent.com',
-  'user-images.githubusercontent.com',
-  'camo.githubusercontent.com',
-  'github.com',
-])
+const SCREENSHOT_HOSTS = README_IMAGE_HOSTS
 const shotsMap = fs.existsSync(SCREENSHOTS_FILE) ? JSON.parse(fs.readFileSync(SCREENSHOTS_FILE, 'utf8')) : {}
 {
   const listed = new Set(ordered.map((e) => e.url))
@@ -718,66 +713,7 @@ const readmes = fs.existsSync('data/readmes.json') ? JSON.parse(fs.readFileSync(
 // entry missing here means "no notes available", never an error downstream.
 const updates = fs.existsSync('data/updates.json') ? JSON.parse(fs.readFileSync('data/updates.json', 'utf8')) : {}
 
-// render a plugin README to safe HTML: raw HTML dropped, headings demoted,
-// relative links/images resolved against the repo (probe supplies the bases)
-function renderReadme(rm) {
-  const abs = (href, base, allowData = false) => {
-    if (!href || /^(https?:|mailto:|#)/i.test(href)) return href
-    if (/^data:/i.test(href)) return allowData ? href : '#'
-    return base + href.replace(/^\.\//, '').replace(/^\//, '')
-  }
-  // A README is third-party markdown, and an <img> in it is a request the
-  // visitor's browser makes to whatever host the author named — which is
-  // exactly the tracking-pixel vector SCREENSHOT_HOSTS already exists to shut
-  // (see data/screenshots.json validation above). The same rule has to apply
-  // here or the guarantee is only as strong as its weakest path.
-  //
-  // The allowlist is GitHub's own hosting, which costs the visitor nothing new:
-  // this site is served from GitHub Pages, so GitHub already sees the request
-  // for the page itself. Everything else — badge services, CDNs, personal
-  // domains — is dropped outright, along with the link and paragraph it leaves
-  // behind. Keeping the alt text instead was worse: nearly all of these are
-  // status badges, and a row of them collapses into "DSH Node.js JavaScript
-  // Cordis Zero deps" — prose the author never wrote, in the position a reader
-  // starts reading. The whole README is one click away in either case.
-  const imgAllowed = (href) => {
-    if (/^data:/i.test(href)) return true // inline bytes, no request leaves
-    try { return SCREENSHOT_HOSTS.has(new URL(href).hostname) } catch { return false }
-  }
-  const md = new Marked({
-    walkTokens(t) {
-      if (t.type === 'heading') t.depth = Math.min(t.depth + 1, 6)
-      else if (t.type === 'image') t.href = abs(t.href, rm.base, true)
-      else if (t.type === 'link') t.href = abs(t.href, rm.blobBase)
-    },
-    renderer: {
-      html: () => '',
-      image({ href, title, text }) {
-        if (!href || !imgAllowed(href)) return ''
-        const t = title ? ` title="${esc(title)}"` : ''
-        return `<img src="${esc(href)}" alt="${esc(text ?? '')}"${t} loading="lazy" decoding="async" referrerpolicy="no-referrer">`
-      },
-    },
-  })
-  try {
-    // drop a leading H1 — the page already has one
-    const src = rm.md.replace(/^\s*# .*\n/, '')
-    // A dropped image leaves debris: first the link that wrapped it, then the
-    // paragraph that held only that link. Raw HTML is already stripped, so
-    // every anchor and paragraph here came from markdown and had content until
-    // we removed the image. Loop because emptying a link empties its paragraph.
-    let html = md.parse(src)
-    for (let prev = null; prev !== html;) {
-      prev = html
-      html = html
-        .replace(/<a\b[^>]*>\s*<\/a>/g, '')
-        .replace(/<p>\s*<\/p>\s*/g, '')
-    }
-    return html
-  } catch {
-    return null
-  }
-}
+
 for (const loc of LOCALES) {
   for (const e of ordered) {
     const url = `${ORIGIN}${loc.urlPath}p/${e.slug}/`
@@ -900,7 +836,7 @@ for (const loc of LOCALES) {
       // legacy shape: the README sat directly on the entry, with no locale key
       if (!rm && entry.md) { rm = entry; rmLang = loc.code }
     }
-    const readmeHtml = rm ? renderReadme(rm) : null
+    const readmeHtml = rm ? renderReadme(rm, SCREENSHOT_HOSTS) : null
     const rmLocale = LOCALES.find((l) => l.code === rmLang)
     const rmMismatch = rm != null && rmLang !== loc.code
     const rmNote = rmMismatch
