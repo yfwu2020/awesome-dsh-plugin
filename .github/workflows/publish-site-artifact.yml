@@ -1,0 +1,49 @@
+name: Publish an existing site build
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Build site run containing the github-pages artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-artifact-publish
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: saved-build
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prepare the saved build for this site
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://awesome-dsh-plugin.com' }}
+        run: |
+          mkdir docs
+          tar -xf saved-build/artifact.tar -C docs
+          node scripts/prepare-pages.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v4

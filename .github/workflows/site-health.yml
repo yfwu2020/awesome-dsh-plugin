@@ -38,9 +38,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: awesome-dsh-plugin.com is not stale
+      - name: Check this site's published catalog
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://awesome-dsh-plugin.com' }}
         run: |
           node scripts/check-site-health.mjs \
-            --live https://awesome-dsh-plugin.com/ \
+            --live "$SITE_URL/" \
             --catalog-dir data/plugins \
             --tolerance ${{ inputs.tolerance || 300 }}

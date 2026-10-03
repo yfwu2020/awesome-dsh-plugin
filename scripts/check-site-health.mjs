@@ -43,9 +43,8 @@ const catalogUrl = args.get('catalog-url')
 const catalogDir = args.get('catalog-dir')
 const tolerance = Number(args.get('tolerance') ?? 300)
 
-// A plugin page link, as both sites render it: href="/p/<slug>/". Anchored to
-// the exact path so a locale-prefixed link or an asset URL cannot inflate it.
-const PAGE_LINK = /href="\/p\/[^"#?]*"/g
+// Count links under this deployment's path, including project Pages sites.
+const PAGE_LINK = /href="([^"#?]*)"/g
 
 function fail(lines) {
   console.error(`\nFAIL — site health check could not confirm the site is current.\n${lines}\n`)
@@ -71,7 +70,8 @@ async function fetchText(url, attempts = 3) {
 }
 
 function countLivePages(html) {
-  return new Set(html.match(PAGE_LINK) ?? []).size
+  const prefix = new URL(live).pathname.replace(/\/$/, '') + '/p/'
+  return new Set([...html.matchAll(PAGE_LINK)].map((m) => m[1]).filter((url) => url.startsWith(prefix))).size
 }
 
 function countCatalog(dir) {
